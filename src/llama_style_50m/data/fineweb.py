@@ -7,6 +7,15 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 
 
+def fineweb_get_data(shard_dir, 
+                     context_size=1024,
+                     test_size=0.05,
+                     seed=42):
+    ds = FineWebDataset(shard_dir, context_size)
+    train_ds, val_ds = random_split(ds, [1-test_size, test_size], seed=seed)
+    return train_ds, val_ds
+
+
 class FineWebDataset(Dataset):
 
     def __init__(self, shard_dir: str, context_size: int = 1024):
