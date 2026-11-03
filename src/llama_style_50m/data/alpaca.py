@@ -31,7 +31,7 @@ def alpaca_get_data(dataset_path,
         ]
 
         tokenized = tokenizer(prompts, truncation=True, max_length=context_size, padding=False)
-        tokenized["labels"] = [ids.copy() for ids in tokenized["input_ids"]
+        tokenized["labels"] = [ids.copy() for ids in tokenized["input_ids"]]
         return tokenized
 
     train_tokenized = train_ds.map(tokenize_func, batched=True, remove_columns=train_ds.column_names)

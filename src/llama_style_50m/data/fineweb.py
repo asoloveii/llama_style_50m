@@ -4,15 +4,14 @@ from functools import lru_cache
 
 import numpy as np
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, random_split
 
 
 def fineweb_get_data(shard_dir, 
                      context_size=1024,
-                     test_size=0.05,
-                     seed=42):
+                     test_size=0.05):
     ds = FineWebDataset(shard_dir, context_size)
-    train_ds, val_ds = random_split(ds, [1-test_size, test_size], seed=seed)
+    train_ds, val_ds = random_split(ds, [1-test_size, test_size])
     return train_ds, val_ds
 
 
