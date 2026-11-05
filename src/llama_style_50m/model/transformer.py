@@ -120,7 +120,8 @@ class GQA(nn.Module):
             k = self.k_cache[:bsz, :, :start_pos+seq]
             v = self.v_cache[:bsz, :, :start_pos+seq]
 
-        attn_outs = F.scaled_dot_product_attention(q, k, v, is_causal=True, enable_gqa=True)
+        is_causal = (seq > 1) and not use_cache
+        attn_outs = F.scaled_dot_product_attention(q, k, v, is_causal=is_causal, enable_gqa=True)
         attn_outs = attn_outs.contiguous().view(bsz, seq, self.d_model)
 
         return self.out_proj(attn_outs)

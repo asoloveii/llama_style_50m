@@ -8,6 +8,17 @@ A lightweight, modern 50M parameter causal language model built completely from 
 
 This project implements a state-of-the-art transformer architecture from scratch, adhering to modern Llama design principles. It provides efficient data preprocessing pipelines, optimized GQA KV-caching for inference, and distributed multi-GPU training script.
 
+## Installation & Setup
+
+This project uses the fast **`uv`** package manager for dependency management. Clone the repository and sync dependencies before running scripts:
+
+```bash
+git clone https://github.com/asoloveii/llama_style_50m.git
+cd llama_style_50m
+
+# install dependencies and set up the virtual environment
+uv sync
+```
 ## Model Architecture
 
 The model incorporates modern architectural improvements over standard transformers:
@@ -25,10 +36,10 @@ Prepare your datasets before training using `uv`:
 
 ```bash
 # download and shard HF FineWeb dataset
-uv run python scripts/load_fineweb.py --total_tokens 1_500_000_000
-                                      --shard_size 100_000_000
-                                      --output_dir "./datasets/fineweb"
-                                      --num_workers 4
+uv run python scripts/load_fineweb.py --total_tokens 1_500_000_000 \
+                                      --shard_size 100_000_000 \
+                                      --output_dir "./datasets/fineweb" \
+                                      --num_workers 4 
 
 # download Alpaca instruction dataset
 uv run python scripts/load_alpaca.py --ouput_dir "./datasets/alpaca"
