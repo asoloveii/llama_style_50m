@@ -1,0 +1,24 @@
+dataset_name: "fineweb"
+shard_dir: "datasets/fineweb_shards"
+dataset_path: null # unused for fineweb
+context_size: 1024
+test_size: 0.01
+seed: 42
+
+epochs: 1                 
+batch_size: 32            # per-GPU batch size
+num_workers: 4
+accum_steps: 4            # gradient accumulation steps
+max_norm: 1.0             # gradient clipping threshold
+
+lr: 3.0e-4                # peak learning rate for pretraining
+betas: [0.9, 0.95]
+weight_decay: 0.1
+warmup_steps: 200         # linear warmup steps
+num_steps: 3000           # total training steps 
+eta_min: 3.0e-5           # minimum learning rate for cosine annealing
+lr_factor: 0.01           # start factor for linear warmup
+
+val_every: 250            # evaluate every N steps
+ckpt_every: 500           # save checkpoint every N steps
+ckpt_dir: "ckpts/pretrain"

@@ -3,7 +3,8 @@ import torch.optim as optim
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.distributed import destroy_process_group, DistributedSampler
+from torch.distributed import destroy_process_group
+from torch.utils.data.distributed import DistributedSampler
 
 import os
 import hydra
@@ -12,6 +13,7 @@ from tqdm import tqdm
 from omegaconf import OmegaConf
 from transformers import AutoTokenizer
 
+from utils import *
 from src.llama_style_50m import (
     Transformer,
     ModelConfig,
@@ -48,13 +50,15 @@ def train(cfg):
                               shuffle=False,
                               num_workers=cfg.num_workers,
                               sampler=sampler,
-                              drop_last=True)
+                              drop_last=True,
+                              collate_fn=alpaca_collate_fn if cfg.dataset_name == "alpaca" else None)
 
     val_loader = DataLoader(val_ds,
                             batch_size=cfg.batch_size,
                             shuffle=False,
                             num_workers=cfg.num_workers,
-                            drop_last=True) 
+                            drop_last=True,
+                            collate_fn=alpaca_collate_fn if cfg.dataset_name == "alpaca" else None) 
     
     print("Dataloaders are ready!")
     print("Model initialization + optimizer and schedulers")
@@ -69,7 +73,13 @@ def train(cfg):
 
     scaler = torch.amp.GradScaler()
     
-    epoch, step, run_id = load_ckpt(model, optimizer, scheduler, scaler, ckpt_dir)
+    epoch, step, run_id = load_ckpt(
+        model, optimizer, scheduler, scaler, 
+        ckpt_dir=cfg.ckpt_dir,
+        device=device,
+        rank=rank,
+        world_size=world_size
+    )
     
     model = DDP(model, device_ids=[local_rank])
     model = torch.compile(model)
@@ -84,10 +94,11 @@ def train(cfg):
             config=cfg_dict
         )
 
-    for _ in range(cfg.epochs):
-
+    for epoch in range(epoch, cfg.epochs):
+        sampler.set_epoch(epoch)
+        
         model.train()
-        for i, (xs, ys) in enumerate(tqdm(train_loader, desc="Training epoch")):
+        for i, (xs, ys) in enumerate(tqdm(train_loader, desc=f"Epoch {epoch}")):
             xs, ys = xs.to(device), ys.to(device)
 
             with torch.autocast(device_type=device.type, dtype=torch.bfloat16):
@@ -105,13 +116,13 @@ def train(cfg):
                 optimizer.zero_grad(set_to_none=True)
                 scheduler.step()
 
-            if (i+1) % cfg.val_every == 0 and rank == 0:
-                evaluate(model, val_loader, device)
+                if (i+1) % cfg.val_every == 0 and rank == 0:
+                    evaluate(model, val_loader, device)
 
-            if (i+1) % cfg.ckpt_every == 0 and rank == 0:
-                save_ckpt(model, optimizer, scheduler, scaler, epoch, step, run_id)
+                if (i+1) % cfg.ckpt_every == 0 and rank == 0:
+                    save_ckpt(model, optimizer, scheduler, scaler, epoch, step, run_id, cfg.ckpt_dir)
 
-            wandb.log({"train/loss": loss.item()})
+            wandb.log({"train/loss": loss.item() * cfg.accum_steps})
 
     if rank == 0:
         wandb.finish()

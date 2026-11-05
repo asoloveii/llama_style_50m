@@ -1,12 +1,13 @@
-from datasets import load_from_disk 
-from torch.utils.data import Dataset
+import torch 
+from torch.nn.utils.rnn import pad_sequence
+from datasets import load_from_disk
 
 
 def alpaca_collate_fn(batch, pad_token_id):
     input_ids = [torch.tensor(item["input_ids"], dtype=torch.long) for item in batch]
     labels = [torch.tensor(item["labels"], dtyle=torch.long) for item in batch]
 
-    input_ids_padded = pad_sequence(inputs, batch_first=True, padding_value=PAD_TOKEN_ID)
+    input_ids_padded = pad_sequence(input_ids, batch_first=True, padding_value=pad_token_id)
     labels_padded = pad_sequence(labels, batch_first=True, padding_value=-100)
 
     return input_ids_padded, labels_padded
