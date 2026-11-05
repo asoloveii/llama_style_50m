@@ -1,0 +1,24 @@
+dataset_name: "alpaca"
+shard_dir: null           # unused for alpaca
+dataset_path: null        # must be written manually or in console 
+context_size: 1024
+test_size: 0.05           # 5% validation split
+seed: 42
+
+epochs: 1                 
+batch_size: 4             
+num_workers: 4
+accum_steps: 4            # effective batch size = 4 * 4 * num_gpus = 64 (with 4 GPUs)
+max_norm: 1.0
+
+lr: 2.0e-5                 
+betas: [0.9, 0.999]
+weight_decay: 0.01
+warmup_steps: 100         
+num_steps: 800 
+eta_min: 2.0e-6
+lr_factor: 0.1
+
+val_every: 200
+ckpt_every: 500
+ckpt_dir: "ckpts/sft""
