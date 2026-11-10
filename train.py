@@ -102,6 +102,8 @@ def train(cfg):
         sampler.set_epoch(epoch)
         
         model.train()
+        running_loss = 0.0
+
         for i, (xs, ys) in enumerate(tqdm(train_loader, desc=f"Epoch {epoch}")):
             xs, ys = xs.to(device), ys.to(device)
 
@@ -111,6 +113,7 @@ def train(cfg):
                 loss = loss / cfg.accum_steps
             
             scaler.scale(loss).backward()
+            running_loss += loss.item()
 
             if (i+1) % cfg.accum_steps == 0:
                 scaler.unscale_(optimizer)
@@ -122,7 +125,9 @@ def train(cfg):
                 step += 1
 
                 if rank == 0:
-                    wandb.log({"train/loss": loss * cfg.accum_steps, "lr": scheduler.get_last_lr()[0]})
+                    avg_step_loss = running_loss / cfg.accum_steps
+                    wandb.log({"train/loss": avg_step_loss, "lr": scheduler.get_last_lr()[0]})
+                    running_loss = 0.0
 
                 if (step+1) % cfg.val_every == 0 and rank == 0:
                     with model.no_sync():
