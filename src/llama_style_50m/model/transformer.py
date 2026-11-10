@@ -55,19 +55,22 @@ class ModelConfig:
     max_seq_len: int = 1024
     theta: float = 10000.0
     eos_token_id: int = 2
+    dropout: float = 0.1
 
 
 class SwiGLU(nn.Module):
 
-    def __init__(self, d_model, hidden_dim):
+    def __init__(self, d_model, hidden_dim, dropout_p):
         super().__init__()
 
         self.value_proj = nn.Linear(d_model, hidden_dim, bias=False)
         self.gate_proj = nn.Linear(d_model, hidden_dim, bias=False)
         self.out_proj = nn.Linear(hidden_dim, d_model, bias=False)
+        self.dropout = nn.Dropout(p=dropout_p)
 
     def forward(self, x: torch.Tensor):
-        return self.out_proj(self.value_proj(x) * F.silu(self.gate_proj(x)))
+        x = self.out_proj(self.value_proj(x) * F.silu(self.gate_proj(x)))
+        return self.dropout(x)
 
 
 class GQA(nn.Module):
@@ -82,10 +85,12 @@ class GQA(nn.Module):
         self.max_batch_size = args.max_batch_size
         self.max_seq_len = args.max_seq_len
         self.kv_dim = self.n_groups * self.head_dim
+        self.dropout_p = args.dropout
 
         self.q_proj = nn.Linear(self.d_model, self.d_model, bias=False)
         self.kv_proj = nn.Linear(self.d_model, 2*(self.head_dim*self.n_groups), bias=False)
         self.out_proj = nn.Linear(self.d_model, self.d_model, bias=False)
+        self.dropout = nn.Dropout(p=self.dropout_p)
         
         self.register_buffer(
             "k_cache",
@@ -113,8 +118,9 @@ class GQA(nn.Module):
         k = k.view(bsz, seq, self.n_groups, self.head_dim).transpose(1, 2)
         v = v.view(bsz, seq, self.n_groups, self.head_dim).transpose(1, 2)
         
-        q = apply_rope(q, rope_embs)
-        k = apply_rope(k, rope_embs)
+        rope = rope_embs[:seq]                
+        q = apply_rope_to_tensor(q, rope)
+        k = apply_rope_to_tensor(k, rope)
         
         # if use_cache:
         #     self.k_cache[:bsz, :, start_pos:start_pos+seq] = k
@@ -124,7 +130,7 @@ class GQA(nn.Module):
         #     v = self.v_cache[:bsz, :, :start_pos+seq]
 
         is_causal = (seq > 1) and not use_cache
-        attn_outs = F.scaled_dot_product_attention(q, k, v, is_causal=is_causal, enable_gqa=True)
+        attn_outs = F.scaled_dot_product_attention(q, k, v, is_causal=is_causal, enable_gqa=True, dropout_p=self.dropout_p)
 
         attn_outs = attn_outs.contiguous().view(bsz, seq, self.d_model)
 
@@ -140,7 +146,7 @@ class Block(nn.Module):
         self.gqa = GQA(args)
 
         self.norm2 = nn.RMSNorm(args.d_model)
-        self.swiglu = SwiGLU(args.d_model, args.hidden_dim)
+        self.swiglu = SwiGLU(args.d_model, args.hidden_dim, args.dropout_p)
 
     def forward(self, 
                 x: torch.Tensor, 

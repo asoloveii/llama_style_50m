@@ -23,7 +23,7 @@ from src.llama_style_50m import (
 )
 
 
-@hydra.main(version_base=None, config_path="./configs", config_name="pretrain.yaml")
+@hydra.main(version_base=None, config_path="./configs", config_name="pretraining.yaml")
 def train(cfg):
     cfg_dict = OmegaConf.to_container(
         cfg, resolve=True, throw_on_missing=True
@@ -85,8 +85,8 @@ def train(cfg):
         world_size=world_size
     )
     
-    model = DDP(model, device_ids=[local_rank])
     model = torch.compile(model)
+    model = DDP(model, device_ids=[local_rank])
 
     print("Initialization is completed")
     
@@ -121,13 +121,16 @@ def train(cfg):
                 scheduler.step()
                 step += 1
 
-                if (i+1) % cfg.val_every == 0 and rank == 0:
-                    evaluate(model, val_loader, device)
+                if rank == 0:
+                    wandb.log({"train/loss": loss * cfg.accum_steps, "lr": scheduler.get_last_lr()[0]})
 
-                if (i+1) % cfg.ckpt_every == 0 and rank == 0:
+                if (step+1) % cfg.val_every == 0 and rank == 0:
+                    with model.no_sync():
+                        val_loss = evaluate(model, val_loader, device)
+                        wandb.log({"val/loss": val_loss})
+
+                if (step+1) % cfg.ckpt_every == 0 and rank == 0:
                     save_ckpt(model, optimizer, scheduler, scaler, epoch, step, run_id, cfg.ckpt_dir)
-
-            wandb.log({"train/loss": loss.item() * cfg.accum_steps})
 
     if rank == 0:
         wandb.finish()
@@ -137,7 +140,7 @@ def train(cfg):
 
 @torch.no_grad
 def evaluate(model, val_loader, device):
-    step_loss = 0.0
+    loss = 0.0
     
     model.eval()
     for xs, ys in tqdm(val_loader, desc="Validating"):
@@ -145,10 +148,10 @@ def evaluate(model, val_loader, device):
         with torch.autocast(device_type=device.type, dtype=torch.bfloat16):
             logits = model(xs)
             loss = F.cross_entropy(logits.flatten(0, 1), ys.flatten())
-            step_loss += loss.item()
+            loss += loss.item()
 
-    step_loss /= len(val_loader)
-    wandb.log({"val/loss": step_loss})
+    loss /= len(val_loader)
+    return loss
 
 
 if __name__ == "__main__":
