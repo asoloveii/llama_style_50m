@@ -6,13 +6,13 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed import destroy_process_group
 from torch.utils.data.distributed import DistributedSampler
 
-import os
 import hydra
 import wandb
 from tqdm import tqdm
 from omegaconf import OmegaConf
 from transformers import AutoTokenizer
 
+from functools import partial
 from utils import *
 from src.llama_style_50m import (
     Transformer,
@@ -23,7 +23,7 @@ from src.llama_style_50m import (
 )
 
 
-@hydra.main(config_path="configs/", config_name="pretraining.yaml")
+@hydra.main(version_base=None, config_path="./configs", config_name="pretrain.yaml")
 def train(cfg):
     cfg_dict = OmegaConf.to_container(
         cfg, resolve=True, throw_on_missing=True
@@ -36,13 +36,17 @@ def train(cfg):
         train_ds, val_ds = fineweb_get_data(cfg.shard_dir, 
                                             cfg.context_size,
                                             cfg.test_size)
+        collate_fn = None
     elif cfg.dataset_name == "alpaca":
-        tokenizer = AutoTokenizer.from_pretrained("hf-interal-testing/llama-tokenizer")
+        tokenizer = AutoTokenizer.from_pretrained("hf-internal-testing/llama-tokenizer")
         train_ds, val_ds = alpaca_get_data(cfg.dataset_path,
                                            tokenizer,
                                            cfg.context_size,
                                            cfg.test_size,
                                            cfg.seed)
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+        collate_fn = partial(alpaca_collate_fn, pad_token_id=tokenizer.pad_token_id)
     
     sampler = DistributedSampler(train_ds, shuffle=True, drop_last=False)
     train_loader = DataLoader(train_ds,
@@ -51,14 +55,14 @@ def train(cfg):
                               num_workers=cfg.num_workers,
                               sampler=sampler,
                               drop_last=True,
-                              collate_fn=alpaca_collate_fn if cfg.dataset_name == "alpaca" else None)
+                              collate_fn=collate_fn)
 
     val_loader = DataLoader(val_ds,
                             batch_size=cfg.batch_size,
                             shuffle=False,
                             num_workers=cfg.num_workers,
                             drop_last=True,
-                            collate_fn=alpaca_collate_fn if cfg.dataset_name == "alpaca" else None) 
+                            collate_fn=collate_fn) 
     
     print("Dataloaders are ready!")
     print("Model initialization + optimizer and schedulers")
@@ -115,6 +119,7 @@ def train(cfg):
                 scaler.update()
                 optimizer.zero_grad(set_to_none=True)
                 scheduler.step()
+                step += 1
 
                 if (i+1) % cfg.val_every == 0 and rank == 0:
                     evaluate(model, val_loader, device)
@@ -148,4 +153,3 @@ def evaluate(model, val_loader, device):
 
 if __name__ == "__main__":
     train()
-

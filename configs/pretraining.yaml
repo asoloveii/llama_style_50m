@@ -1,5 +1,5 @@
 dataset_name: "fineweb"
-shard_dir: "datasets/fineweb_shards"
+shard_dir: "datasets/fineweb"
 dataset_path: null # unused for fineweb
 context_size: 1024
 test_size: 0.01

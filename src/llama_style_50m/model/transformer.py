@@ -81,6 +81,7 @@ class GQA(nn.Module):
         self.n_groups = args.n_groups
         self.max_batch_size = args.max_batch_size
         self.max_seq_len = args.max_seq_len
+        self.kv_dim = self.n_groups * self.head_dim
 
         self.q_proj = nn.Linear(self.d_model, self.d_model, bias=False)
         self.kv_proj = nn.Linear(self.d_model, 2*(self.head_dim*self.n_groups), bias=False)
@@ -106,22 +107,25 @@ class GQA(nn.Module):
         bsz, seq, dim = x.shape
 
         q = self.q_proj(x).view(bsz, seq, self.n_heads, self.head_dim).transpose(1, 2)
-        kv = self.kv_proj(x).view(bsz, seq, 2, self.head_dim, self.n_groups).permute(2, 0, 4, 1, 3)
-        k, v = kv[0], kv[1]
-        
-        current_rope = rope_embs[start_pos:start_pos+seq]
-        q = apply_rope_to_tensor(q, current_rope)
-        k = apply_rope_to_tensor(k, current_rope)
-        
-        if use_cache:
-            self.k_cache[:bsz, :, start_pos:start_pos+seq] = k
-            self.v_cache[:bsz, :, start_pos:start_pos+seq] = v
+        kv = self.kv_proj(x)
+        k, v = torch.split(kv, self.kv_dim, dim=-1)
 
-            k = self.k_cache[:bsz, :, :start_pos+seq]
-            v = self.v_cache[:bsz, :, :start_pos+seq]
+        k = k.view(bsz, seq, self.n_groups, self.head_dim).transpose(1, 2)
+        v = v.view(bsz, seq, self.n_groups, self.head_dim).transpose(1, 2)
+        
+        q = apply_rope(q, rope_embs)
+        k = apply_rope(k, rope_embs)
+        
+        # if use_cache:
+        #     self.k_cache[:bsz, :, start_pos:start_pos+seq] = k
+        #     self.v_cache[:bsz, :, start_pos:start_pos+seq] = v
+
+        #     k = self.k_cache[:bsz, :, :start_pos+seq]
+        #     v = self.v_cache[:bsz, :, :start_pos+seq]
 
         is_causal = (seq > 1) and not use_cache
         attn_outs = F.scaled_dot_product_attention(q, k, v, is_causal=is_causal, enable_gqa=True)
+
         attn_outs = attn_outs.contiguous().view(bsz, seq, self.d_model)
 
         return self.out_proj(attn_outs)

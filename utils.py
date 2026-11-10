@@ -1,6 +1,7 @@
 import os
 import wandb
 import torch
+from wandb.sdk.lib.runid import generate_id
 from torch.distributed import init_process_group
 
 
@@ -52,7 +53,7 @@ def load_ckpt(model,
         epoch = 0
         step = 0
         
-        run_id = wandb.util.generate_id() if rank == 0 else None
+        run_id = generate_id() if rank == 0 else None
     else:
         latest_path = os.path.join(ckpt_dir, ckpt_files[-1])
         print(f"Resuming training from checkpoint: {latest_path}")

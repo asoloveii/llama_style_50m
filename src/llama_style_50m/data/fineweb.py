@@ -4,7 +4,7 @@ from functools import lru_cache
 
 import numpy as np
 import torch
-from torch.utils.data import Dataset, DataLoader, random_split
+from torch.utils.data import Dataset, random_split
 
 
 def fineweb_get_data(shard_dir, 
@@ -53,35 +53,36 @@ class FineWebDataset(Dataset):
 
     def __getitem__(self, idx: int):
         start_token_idx = idx * self.context_size
-        end_token_idx = start_token_idx + self.context_size + 1
-
-        # collect tokens, handle cases where a seq spans across two shards
-        tokens = []
         tokens_needed = self.context_size + 1
 
+        tokens = []
         current_token_idx = start_token_idx
+
         while len(tokens) < tokens_needed and current_token_idx < self.total_tokens:
             shard_idx = next(i for i, cum_len in enumerate(self.cumul_lengths[1:], start=0) if current_token_idx < cum_len)
             
             shard_start_token = self.cumul_lengths[shard_idx]
             shard_offset = current_token_idx - shard_start_token
             mmap_array = self._get_mmap(shard_idx)
-            # take as much as available tokens
+            
             available_in_shard = len(mmap_array) - shard_offset
-            chunk_to_take = min(tokens_needed - len(tokens), available_in_shard)
+            needed = tokens_needed - len(tokens)
+            chunk_to_take = min(needed, available_in_shard)
 
-            chunk = mmap_array[shard_offset:shard_offset+chunk_to_take]
+            chunk = mmap_array[shard_offset : shard_offset + chunk_to_take]
             tokens.append(chunk)
 
             current_token_idx += chunk_to_take
 
         tokens = np.concatenate(tokens)
 
+        # strict safety padding
         if len(tokens) < tokens_needed:
             tokens = np.pad(tokens, (0, tokens_needed - len(tokens)), mode="constant")
+        else:
+            tokens = tokens[:tokens_needed]  
 
-        x = torch.from_numpy(tokens[:-1].astype(np.int64))
-        y = torch.from_numpy(tokens[1:].astype(np.int64))
+        x = torch.from_numpy(tokens[:-1].astype(np.int64))  
+        y = torch.from_numpy(tokens[1:].astype(np.int64))   
 
         return x, y
-
