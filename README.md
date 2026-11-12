@@ -36,7 +36,7 @@ Prepare your datasets before training using `uv`:
 
 ```bash
 # download and shard HF FineWeb dataset
-uv run python scripts/load_fineweb.py --total_tokens 1_500_000_000 \
+uv run python scripts/load_fineweb.py --total_tokens 1_700_000_000 \
                                       --shard_size 100_000_000 \
                                       --output_dir "./datasets/fineweb" \
                                       --num_workers 4 
@@ -53,6 +53,17 @@ To launch distributed training across available GPUs (e.g., 4 GPUs):
 ```bash
 uv run torchrun --nproc_per_node=4 train.py
 ```
+
+## Training loss history
+
+### Pretraining phase
+![Pretraining train loss](assets/train_loss.png)
+![Pretraining val loss](assets/val_loss.png)
+
+### SFT instruction tuning phase
+![SFT train loss](assets/sft_train_loss.png)
+![SFT val loss](assets/sft_val_loss.png)
+
 
 ## Project Structure
 ```
