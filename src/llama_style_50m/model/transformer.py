@@ -122,17 +122,17 @@ class GQA(nn.Module):
         q = apply_rope_to_tensor(q, rope)
         k = apply_rope_to_tensor(k, rope)
         
-        # if use_cache:
-        #     self.k_cache[:bsz, :, start_pos:start_pos+seq] = k
-        #     self.v_cache[:bsz, :, start_pos:start_pos+seq] = v
+        if use_cache:
+            self.k_cache[:bsz, :, start_pos:start_pos+seq] = k
+            self.v_cache[:bsz, :, start_pos:start_pos+seq] = v
 
-        #     k = self.k_cache[:bsz, :, :start_pos+seq]
-        #     v = self.v_cache[:bsz, :, :start_pos+seq]
+            k = self.k_cache[:bsz, :, :start_pos+seq]
+            v = self.v_cache[:bsz, :, :start_pos+seq]
 
         is_causal = (seq > 1) and not use_cache
-        attn_outs = F.scaled_dot_product_attention(q, k, v, is_causal=is_causal, enable_gqa=True, dropout_p=self.dropout_p)
+        attn_outs = F.scaled_dot_product_attention(q, k, v, is_causal=is_causal, enable_gqa=True, dropout_p=0)
 
-        attn_outs = attn_outs.contiguous().view(bsz, seq, self.d_model)
+        attn_outs = attn_outs.transpose(1, 2).contiguous().view(bsz, seq, self.d_model)
 
         return self.out_proj(attn_outs)
 
@@ -146,7 +146,7 @@ class Block(nn.Module):
         self.gqa = GQA(args)
 
         self.norm2 = nn.RMSNorm(args.d_model)
-        self.swiglu = SwiGLU(args.d_model, args.hidden_dim, args.dropout_p)
+        self.swiglu = SwiGLU(args.d_model, args.hidden_dim, args.dropout)
 
     def forward(self, 
                 x: torch.Tensor, 
@@ -169,6 +169,8 @@ class Transformer(nn.Module):
         self.blocks = nn.ModuleList([Block(args) for _ in range(args.n_layers)])
         self.norm = nn.RMSNorm(args.d_model)
         self.out_proj = nn.Linear(args.d_model, args.vocab_size, bias=False)
+
+        self.apply(self._init_weights)
         
         self.register_buffer(
             "rope_embs",
@@ -183,6 +185,17 @@ class Transformer(nn.Module):
             x = block(x, self.rope_embs, start_pos, use_cache)
 
         return self.out_proj(self.norm(x))
+
+    def _init_weights(self, module):
+        if isinstance(module, nn.Linear):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            if module.bias is not None:
+                torch.nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.Embedding):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+        elif isinstance(module, nn.LayerNorm):
+            torch.nn.init.zeros_(module.bias)
+            torch.nn.init.ones_(module.weight)
 
     @torch.inference_mode
     def generate(self, 

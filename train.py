@@ -37,6 +37,12 @@ def train(cfg):
                                             cfg.context_size,
                                             cfg.test_size)
         collate_fn = None
+
+        print(f"Total shards found: {len(train_ds.dataset.shard_paths if hasattr(train_ds, 'dataset') else train_ds.shard_paths)}")
+        print(f"Total dataset tokens: {train_ds.dataset.total_tokens if hasattr(train_ds, 'dataset') else train_ds.total_tokens:,}")
+        print(f"Train dataset size (samples): {len(train_ds):,}")
+        print(f"Val dataset size (samples): {len(val_ds):,}")
+
     elif cfg.dataset_name == "alpaca":
         tokenizer = AutoTokenizer.from_pretrained("hf-internal-testing/llama-tokenizer")
         train_ds, val_ds = alpaca_get_data(cfg.dataset_path,
@@ -69,7 +75,24 @@ def train(cfg):
     
     model = Transformer(ModelConfig()).to(device)
 
-    optimizer = optim.AdamW(model.parameters(), lr=cfg.lr, betas=cfg.betas, weight_decay=cfg.weight_decay)
+    decay_params = []
+    nodecay_params = []
+
+    for name, param in model.named_parameters():
+        if not param.requires_grad:
+            continue
+        # exclude 1d params from weight decay
+        if param.ndim == 1 or "norm" in name or "bias" in name:
+            nodecay_params.append(param)
+        else:
+            decay_params.append(param)
+
+    optim_groups = [
+        {"params": decay_params, "weight_decay": cfg.weight_decay},
+        {"params": nodecay_params, "weight_decay": 0.0},
+    ]
+
+    optimizer = optim.AdamW(optim_groups, lr=cfg.lr, betas=cfg.betas, weight_decay=cfg.weight_decay)
 
     s1 = optim.lr_scheduler.LinearLR(optimizer, total_iters=cfg.warmup_steps, start_factor=cfg.lr_factor)
     s2 = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=cfg.num_steps-cfg.warmup_steps, eta_min=cfg.eta_min)
@@ -124,9 +147,8 @@ def train(cfg):
                 scheduler.step()
                 step += 1
 
-                if rank == 0:
-                    avg_step_loss = running_loss / cfg.accum_steps
-                    wandb.log({"train/loss": avg_step_loss, "lr": scheduler.get_last_lr()[0]})
+                if rank == 0:                    
+                    wandb.log({"train/loss": running_loss, "lr": scheduler.get_last_lr()[0]})
                     running_loss = 0.0
 
                 if (step+1) % cfg.val_every == 0 and rank == 0:
@@ -145,7 +167,7 @@ def train(cfg):
 
 @torch.no_grad
 def evaluate(model, val_loader, device):
-    loss = 0.0
+    step_loss = 0.0
     
     model.eval()
     for xs, ys in tqdm(val_loader, desc="Validating"):
@@ -153,10 +175,10 @@ def evaluate(model, val_loader, device):
         with torch.autocast(device_type=device.type, dtype=torch.bfloat16):
             logits = model(xs)
             loss = F.cross_entropy(logits.flatten(0, 1), ys.flatten())
-            loss += loss.item()
+            step_loss += loss.item()
 
-    loss /= len(val_loader)
-    return loss
+    step_loss /= len(val_loader)
+    return step_loss
 
 
 if __name__ == "__main__":
