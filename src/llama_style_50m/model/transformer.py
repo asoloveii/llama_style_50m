@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import torch, torch.nn as nn
 import torch.nn.functional as F
+from huggingface_hub import PyTorchModelHubMixin
 
 
 def precompute_rope_embeddings(head_dim: int, max_seq_len: int, theta: float):
@@ -130,7 +131,7 @@ class GQA(nn.Module):
             v = self.v_cache[:bsz, :, :start_pos+seq]
 
         is_causal = (seq > 1) and not use_cache
-        attn_outs = F.scaled_dot_product_attention(q, k, v, is_causal=is_causal, enable_gqa=True, dropout_p=0)
+        attn_outs = F.scaled_dot_product_attention(q, k, v, is_causal=is_causal, enable_gqa=True, dropout_p=self.dropout)
 
         attn_outs = attn_outs.transpose(1, 2).contiguous().view(bsz, seq, self.d_model)
 
@@ -158,7 +159,7 @@ class Block(nn.Module):
         return x
 
 
-class Transformer(nn.Module):
+class Transformer(nn.Module, PyTorchModelHubMixin):
 
     def __init__(self, args: ModelConfig):
         super().__init__()

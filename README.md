@@ -2,6 +2,8 @@
 
 A lightweight, modern 50M parameter causal language model built completely from scratch using PyTorch, optimized with the `uv` package manager, and equipped with Distributed Data Parallel (DDP) training and Weights & Biases tracking.
 
+[HugginFace](https://huggingface.co/asoloveii/llama-style-50m)
+
 ---
 
 ## Overview
