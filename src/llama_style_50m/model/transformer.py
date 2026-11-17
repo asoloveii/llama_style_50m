@@ -131,7 +131,8 @@ class GQA(nn.Module):
             v = self.v_cache[:bsz, :, :start_pos+seq]
 
         is_causal = (seq > 1) and not use_cache
-        attn_outs = F.scaled_dot_product_attention(q, k, v, is_causal=is_causal, enable_gqa=True, dropout_p=self.dropout)
+        drop = self.dropout_p if self.training else 0.0
+        attn_outs = F.scaled_dot_product_attention(q, k, v, is_causal=is_causal, enable_gqa=True, dropout_p=drop)
 
         attn_outs = attn_outs.transpose(1, 2).contiguous().view(bsz, seq, self.d_model)
 
